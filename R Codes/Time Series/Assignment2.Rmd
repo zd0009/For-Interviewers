@@ -1,0 +1,120 @@
+---
+title: "MSCA 31006 Assignment2"
+author: "Duo Zhou"
+date: "10/18/2020"
+output: pdf_document
+---
+Instructions: 
+
+• Total number of points is 30. The assignmnet’s final grade will be multiplied by 1/6 to calculate its weight on the final grade.
+
+• Mark the question number and your final answer clearly (use a textbox.)
+
+• Remember to show and explain your work (If you can't explain it, you don't understand it.) 
+
+• Please submit your solution through Canvas. 
+
+For this exercise, use the monthly Australian short-term overseas visitors data, May 1985–April 2005 which is also available in the ‘expsmooth’ library (Data set: visitors.)
+
+```{r,include=FALSE,warning=FALSE}
+library(expsmooth)
+library(fpp)
+library(tseries)
+library(ggplot2)
+library(forecast)
+```
+
+### (5 points) Question 1:
+Load the visitors.rda dataset, make a time plot of your data and describe the main features of the series.
+
+```{r}
+data(visitors)
+plot(visitors, main="Monthly - short-term overseas visitors",panel.first = grid())
+```
+Based on the TS plot above, we can see that there is an increasing trend(means of TS increases over time), which implies that the time series is no stationary. There is a strong seasonality in the time series, but no cyclic pattern.
+
+#### (5 points) Question 2:
+What is the appropriate Holt-Winters method for this data set (multiplicative / additive)? why?
+
+Since the amplitude of the seasonal pattern is proportional to the average level within the season(changes over time), we can say that the appropriate Holt-Winters seasonal model for the data set is multiplicative method.
+
+#### (10 points) Question 3
+Use the hw() function to forecast the next 15 months using Holt-Winters methods. Experiment
+
+with the following methods
+
+
+##### Linear trend with additive seasonality
+
+
+```{r}
+lt_ad <- hw(visitors, h=15, seasonal="additive", damped=FALSE, 
+            exponential = FALSE)
+summary(lt_ad)
+plot(lt_ad)
+```
+
+##### Linear trend with multiplicative seasonality
+
+```{r}
+lt_mu <- hw(visitors, h=15, seasonal="multiplicative", damped=FALSE,
+            exponential = FALSE)
+summary(lt_mu)
+plot(lt_mu)
+```
+
+##### Linear trend with additive seasonality and damping
+
+```{r}
+lt_ad_dam <- hw(visitors, h=15, seasonal="additive", damped=TRUE,
+                exponential = FALSE)
+summary(lt_ad_dam)
+plot(lt_ad_dam)
+```
+
+
+##### Linear trend with multiplicative seasonality and damping
+
+```{r}
+lt_mu_dam <- hw(visitors, h=15, seasonal="multiplicative",
+                damped=TRUE, exponential = FALSE)
+summary(lt_mu_dam)
+plot(lt_mu_dam)
+```
+
+
+#### (5 points) Question 4:
+Use the accuracy() function to compare the Root-Mean-Square-Error (RMSE) values of the forecasts from the various methods. Which do you prefer and why?
+
+```{r}
+cat('The RMSE of Linear trend with additive seasonality model is ', 
+      accuracy(lt_ad)[2], '\n', 
+'The RMSE of Linear trend with multiplicative seasonality model is ', 
+      accuracy(lt_mu)[2], '\n',
+'The RMSE of Linear trend with additive seasonality and damping model is ', 
+      accuracy(lt_ad_dam)[2], '\n',
+'The RMSE of Linear trend with multiplicative seasonality and damping model is ',
+      accuracy(lt_mu_dam)[2], '\n')
+
+```
+
+Linear trend with multiplicative seasonality and damping model has the smallest RMSE. It is the most prefered model.
+
+#### (5 points) Question 5:
+
+Use the checkresiduals() function to check that the residuals from the best model look like white noise and provide a summary of the model’s smoothing parameters using the summary() function.
+
+```{r}
+checkresiduals(lt_mu_dam)
+```
+
+Based on the ACF plot, we can see that there are still autocorrelations in lag 3 and lag 12 in the residuals. Box-Ljung test also supports that H0, there is no serial autocorrelation in the residuals at any lag k, should be rejected. The residuals from the best model we chose does not look like a white noise.
+
+We can say that Linear trend with multiplicative seasonality and damping method still left some serial correlations(information not caused by randomness) out of the model. 
+
+```{r}
+summary(lt_mu_dam)
+```
+
+Based on the summary of the model we chose, alpha indicates that how much weights were given to the level from the previous data values. Since alpha is 0.6668, we can say that the influence of previous data levels on current level is moderate. Beta is  0.0043, which indicates that there is a trend in the model, but very small. Gamma is 1e-04, which indicates that the change in seasonality is very insignificant.
+Finally, Phi is 0.98 which is very close to 1. A phi value close to 1 indicates that the trend is very linear(Very little damping is applied to the original linear trend).   

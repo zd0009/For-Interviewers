@@ -1,0 +1,243 @@
+---
+title: "MSCA 31006 Assignment4"
+author: "Duo Zhou"
+date: "11/1/2020"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+## Instructions:
+
+Total number of points is 60. The assignmnet final grade will be multiplied by 1/10 to calculate its weight on the final grade.
+
+Mark the question number and your final answer clearly (use a textbox.)
+
+Remember to show and explain your work (If you can't explain it, you don't understand it.)
+
+ Please submit your solution through Canvas.
+
+For this assignment, you are given a hourly traffic flow datasets from Illinois Department of Transpiration (IDOT) for I80E 1EXIT for 6/16/2013 - 7/1/2013. See the second data column in each attached file. Note: each data point is an hourly count of the number of vehicles at a specific location on I80E.
+
+```{r packages, warning=FALSE, message=FALSE}
+library(reshape2)
+library(ggplot2)
+library(gdata)
+library(stringr)
+library(xts)
+library(forecast)
+library(timeSeries)
+library(forecast)
+library(tseries)
+library(TSA)
+library(readxl)
+```
+
+### (2 points) Question 1:
+Combine the data from the 16 files into a single dataset and plot it.
+
+```{r data, warning=FALSE, message=FALSE}
+base_path <- "C:/Users/zd000/Desktop/MSCA/Time Series/Assignments/data/Traffic Flow Data/"
+date_parse_helper <- function(d) {
+  d <- str_replace_all(d, "I-57-|\\.xls", "")
+  as.Date(d, format = "%Y-%B-%d")
+}
+read_i57_xls <- function(base_path, file_name) {
+  df_ <- read_excel(paste(base_path,file_name,sep="/"),sheet=1)
+  df_ <- df_[5:28,c(3,5)]
+  names(df_)<-c('Time','I80E_1EXIT')
+  df_$date <- date_parse_helper(file_name)
+  for(i in 1:24){
+  df_$datetime[i] <-paste(df_$date[i],df_[i,'Time'])
+  }
+  return(df_[,c('datetime','I80E_1EXIT')])
+}
+df<-df <- plyr::ldply(list.files(base_path)[c(2:16,1)], function(f) read_i57_xls(base_path, f))
+
+df$datetime<-strptime(df$datetime, "%Y-%m-%d %H:%M")
+
+df[c(1:10,380:384),]
+plot(ts(df$I80E_1EXIT),ylab='I80E_1EXIT', main='Hourly Traffic Flow of I80_Exit1 from 2013-06-16 to 2013-07-01')
+```
+
+We can clearly see seasonality in the TS plot.
+
+### (3 points) Question 2:
+Split the dataset into a training dataset which includes 6/16/2013 - 6/30/2013 samples and a test dataset which includes 7/1/2013 samples. Plot the ACF and PACF, and apply the Augmented Dickey-Fuller Test to check if the training dataset is stationary
+
+```{r, message=FALSE}
+time_index <- seq(from = as.POSIXct("2013-06-16 01:00"), 
+                  to = as.POSIXct("2013-07-02 0:00"), by = "hour")
+obs <- xts(df['I80E_1EXIT'], order.by = time_index)
+# first 360 data points are from 6/16/2013 - 6/30/2013 
+train <- as.numeric(ts(obs[1:360]))
+# last 24 data points are 7/1/2013 samples
+test <- as.numeric(ts(obs[361:384])) 
+```
+
+
+```{r}
+tsdisplay(train)
+```
+
+```{r,warning=FALSE}
+tseries::adf.test(train,k=24)
+```
+Up to lag order = 24, P=0.02966 < 0.05. We can reject H0 and accept the alternative hypothesis that training data is stationary.
+
+
+### (10 points) Question 3: 
+Build an ARIMA(p,d,q) model using the training dataset and R auto.arima() function. Change the values of p and q and determine the best model using AICc and BIC values. Do AICc and BIC select the same model as the best model? For each derived model, review the residual plots for the residuals ACF and normality.
+
+```{r}
+fit1 <- auto.arima(train, seasonal = F,stepwise = T, trace=T, approximation = FALSE)
+summary(fit1)
+
+```
+
+```{r}
+plot(forecast(fit1, 24), xlab="Time", ylab="Number of Vehicles",main="ARIMA(2,0,3) Forecast")
+lines(x=c(361:384), y =test, col="red")
+legend(250, 1600, legend=c("Real", "Forecast"),
+       col=c("red", "blue"), lty=1)
+```
+
+```{r}
+checkresiduals(fit1)
+```
+ 
+
+```{r}
+qqnorm(fit1$residuals)
+qqline(fit1$residuals)
+```
+
+The auto.arima() function returns a model of ARIMA(2,0,3) with AICc = 4455.88 and BIC = 4482.77. In
+The forecast plot, red line is the actual number of vehicles and blue line is the forecast line, and as we could see that blue line does not match well with the red line. Also in the residual plot, there is a huge spike around the middle. ACF of the residuals suggests that there are still auto-correlations that was not captured in the model. The QQ plot shows that there are a few outliers in the residual that makes the residual distribution deviates from normality around the tails.
+
+I am going to change p and q up to 5 and see which combination of p and q gives the best AICc and BICc. 
+
+```{r}
+AICc_min <- 5000
+AICc_min_p <- 0
+AICc_min_q <- 0
+BIC_min <- 5000
+BIC_min_p <- 0
+BIC_min_q <- 0
+for (p in 1:5){
+  for (q in 1:5){
+        fit11 <- Arima(train, order = c(p,0,q))
+        AICc <- fit11$aicc
+        BIC <-fit11$bic
+        if(AICc < AICc_min){
+        AICc_min <- AICc
+        AICc_min_p <- p
+        AICc_min_q <- q}
+        if(BIC < BIC_min){
+            BIC_min <- BIC
+            BIC_min_p <- p
+            BIC_min_q <- q}
+  }
+  }
+
+cbind(AICc_min=AICc_min, AICc_min_p=AICc_min_p,AICc_min_q=AICc_min_q)
+cbind(BIC_min=BIC_min,BIC_min_p=BIC_min_p,BIC_min_q= BIC_min_q)
+```
+
+Based on AICc and BIC, the same model was selected as the best model: ARIMA(4,0,3) with AICc=4409.439 and BIC=4443.9.
+
+```{r}
+fit.best <- Arima(train, order=c(4,0,3))
+fit.best
+```
+
+
+```{r}
+plot(forecast(fit.best, 24), xlab="Time", ylab="Number of Vehicles",main="ARIMA(4,0,3) Forecast")
+lines(x=c(361:384), y =test, col="red")
+legend(250, 1600, legend=c("Real", "Forecast"),
+       col=c("red", "blue"), lty=1)
+```
+```{r}
+checkresiduals(fit.best)
+qqnorm(fit.best$residuals)
+qqline(fit.best$residuals)
+```
+
+Although ARIMA(4,0,3) fits the test data much better thatn ARIMA(2,0,3). The residual plots of ARIMA(4,0,3) still show that same issues as ARIMA(2,0,3). These show that our model needs further improvement. We clearly see the seaonality in our train data and residuals ACF shows significant autocorrelation in lag=23 and 24. We need to consider sARIMA model.
+
+
+### (10 points) Question 4:
+Build a day of the week seasonal ARIMA(p,d,q)(P,D,Q) model using the training dataset and R auto.arima() function.
+
+```{r}
+# use day of the week: s=24*7=168
+tsdisplay(diff(train,168))
+```
+
+```{r,warning=TRUE}
+# use day of the week: s=24*7=168
+fit2 <- auto.arima(ts(train, frequency=168),seasonal=T)
+fit2
+```
+
+### (10 points) Question 5:
+Use the  model  ARIMA(p,d,q)(P,D,Q) from Question 4 to forecast for July 1st (which is a Monday). Plot your result.
+
+
+```{r}
+# forecast for July 1
+
+plot(forecast(fit2, 24), xlab="Time",
+     ylab="Number of Vehicles",main="ARIMA(0,1,2)(0,1,0)[168]  Forecast")
+lines(x=c(time(forecast(fit2, 24)$mean)), y =ts(test, frequency = 168) , col="red")
+legend(2.5, 1450, legend=c("Real", "Forecast"),
+       col=c("red", "blue"), lty=1,cex=0.6)
+```
+
+We can see that the fit is much better.
+
+
+### (10 points) Question 6:
+Build a hour of the day seasonal ARIMA(p,d,q)(P,D,Q) model using the training dataset and R auto.arima() function.
+
+```{r}
+# use hour of the day: s=24
+fit3 <- auto.arima(ts(train, frequency=24),seasonal=T)
+fit3
+```
+
+
+### (10 points) Question 7:
+Use the  ARIMA(p,d,q)(P,D,Q) model from Question 6 to forecast for July 1st (which is a Monday). Plot your result.
+
+```{r}
+# forecast for July 1
+
+plot(forecast(fit3, 24), xlab="Time",
+     ylab="Number of Vehicles",main="ARIMA(0,1,2)(0,1,0)[168]  Forecast")
+lines(x=c(time(forecast(fit3, 24)$mean)), y =ts(test, frequency = 24) , col="red")
+legend(2.5, 1450, legend=c("Real", "Forecast"),
+       col=c("red", "blue"), lty=1,cex=0.6)
+```
+
+
+### (5 points) Question 8: 
+Compare the forecast of the models from Questions 5 and 7 for July 1 8:00, 9:00, 17:00 and 18:00, which model is better (Questions 4 or 6)?
+
+The sum of squared error(SSE) of these 4 forecast points from Q5 model and Q7 model are calculated for comparison. Whichever has the smaller SSE is a better model. 
+```{r}
+# selecting forecast from both model at July 1 8:00, 9:00, 17:00 and 18:00
+forecast_fit2<-forecast(fit2, 24)$mean[c(8,9,17,18)]
+forecast_fit3<-forecast(fit3, 24)$mean[c(8,9,17,18)]
+# selecting real test data at July 1 8:00, 9:00, 17:00 and 18:00
+test_4<-test[c(8,9,17,18)]
+cat('SSE of the 4 time points from Q5 model is', sum((forecast_fit2-test_4)^2),'\n')
+
+cat('SSE of the 4 time points from Q7 model is', sum((forecast_fit3-test_4)^2))
+```
+
+Clearly the Q5 model has a much smaller SSE at this 4 time points. We can also see from the forecast plot that Q5 model fit much better than Q7 model with the real data. Hence Q5 Model is a better model for forecasting.
+
+
+

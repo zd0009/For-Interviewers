@@ -1,0 +1,160 @@
+---
+title: "MSCA 31006 Assignment3"
+author: "Duo Zhou"
+date: "10/25/2020"
+output: pdf_document
+---
+
+## Instructions:
+
+. Total number of points is 36. The assignmnet's final grade will be multiplied by 1/6 to calculate its weight on the final grade.
+
+. Mark the question number and your final answer clearly (use a textbox.)
+
+. Remember to show and explain your work (If you can't explain it, you don't understand it.)
+
+. Please submit your solution through Canvas.
+
+For this exercise, we will use the Quarterly US GDP 1947Q1 - 2006Q1 dataset from the FPP package (Data set: usgdp.rda).
+
+```{r,include=FALSE,warning=FALSE}
+library(expsmooth)
+library(fpp)
+library(tseries)
+library(ggplot2)
+library(forecast)
+```
+
+### (1 points) Question 1:
+Load the usgdp.rda dataset and split it into a training dataset (1947Q1 - 2005Q1) and a test dataset (2005Q2 - 2006Q1)
+
+
+```{r}
+data(usgdp)
+(usgdp_train<-ts(usgdp[1:233],start=c(1947,1),frequency = 4))
+(usgdp_test<-ts(usgdp[234:237],start=c(2005,2),frequency = 4))
+```
+
+### (5 points) Question 2:
+Plot the training dataset. Is the Box-Cox transformation necessary for this data?
+
+```{r}
+plot(usgdp_train, main="Quarterly - US GDP ",panel.first = grid())
+```
+
+```{r}
+gdpvar<-c()
+gdplv<-c()
+for (i in 1:as.integer(233/4)){
+    gdpvar[i]<-var(usgdp_train[seq(4*i,4*i-3,-1)])
+    gdplv[i]<-mean(usgdp_train[seq(4*i,4*i-3,-1)])
+}
+plot(x=gdplv,y=gdpvar,main='Quaterly GDP Variance vs Level')
+BoxCox.lambda(usgdp_train)
+```
+
+
+```{r}
+usgdp_train.bct<-BoxCox(usgdp_train,lambda = 0.3689656)
+usgdp_test.bct<-BoxCox(usgdp_test,lambda = 0.3689656)
+plot(usgdp_train.bct)
+```
+
+
+
+From the plot, We can see that variance changes with level and suggested lamda for BoxCox transformation is 0.3689656. But this is not enough to conclude that whether Box-Cox Transformation is necessary for the data. I will produce best arima models for both original data and box-cox transformed data and make the conclusion based on the sum of squared error from the forecast of each model.
+
+```{r}
+# There does not appear to be a seasonal pattern, so we fit the best model without seasonality
+fit.uchanged<-auto.arima(usgdp_train, seasonal = F)
+fit.bct<-auto.arima(usgdp_train.bct,seasonal = F)
+fc.uc<-forecast(fit.uchanged,h=4)$mean
+fc.bct<- bimixt::boxcox.inv(forecast(fit.bct,h=4)$mean,lambda = 0.3689656)
+sse.uc<-sum((fc.uc-usgdp_test)**2)
+sse.bct<-sum((fc.bct-usgdp_test)**2)
+cat('Forecast SSE of Unchanged Data:',sse.uc,'\n')
+cat('Forecast SSE of Box-Cox Transformed Data:',sse.bct)
+```
+
+We can see that Forecast SSE from the best ARIMA model of Unchanged Data is smaller than Forecast SSE from the best ARIMA model of Box-Cox Transformed Data. The conclusion is that Box-Cox Transformation is NOT necessary.
+
+
+### (5 points) Question 3:
+
+Plot the 1st and 2nd order difference of the data. Apply KPSS Test for Stationarity to determine which difference order results in a stationary dataset.
+
+```{r}
+usgdp_train.d1<-diff(usgdp_train)
+usgdp_train.d2<-diff(usgdp_train,differences = 2)
+par(mfrow=c(2,1))
+plot(usgdp_train.d1,main='1st Order Differencing')
+plot(usgdp_train.d2,main='2nd Order Differencing')
+```
+
+```{r,warning=FALSE}
+print('1st Order Differencing')
+tseries::kpss.test(usgdp_train.d1)
+print('2nd Order Differencing')
+tseries::kpss.test(usgdp_train.d2)
+```
+
+Based on the KPSS test, 1st Order Differencing p-value =0.01, which is less than 0.05 and 2nd Order Differencing p-value-0.1, which is greater than 0.05. With 5% confidence level, we can conclude that the null hythothesis(H0), data is stationary should be rejected for 1st Order Differencing and H0 should be accepted for 2nd Order Differencing. 2nd order differencing results in a stationary dataset.
+
+### (5 points) Question 4: 
+Fit a suitable ARIMA model to the training dataset using the auto.arima() function. Remember to transform the data first if necessary. Report the resulting p, d, q and the coefficients values
+
+```{r}
+# There does not appear to be a seasonal pattern, so we fit the best model without seasonality
+(fit<-auto.arima(usgdp_train,seasonal = F))
+```
+
+p=2, d=2 and q=2. We see that order of differencing is 2 which is consistent with our conclusion in Q3. $\phi_{1}=-0.1138, \phi_{2}=0.3059, \theta_{1}=-0.5829, \theta_{2} =-0.3710$ and c=0.
+
+The model equation is:
+
+$(1-(-0.1138)B-(0.3059)B^{2})(1-B)^{2}y_{t}=0+(1+(-0.5829)B+(-0.3710)B^{2})\epsilon_{t}$
+
+### (5 points) Question 5:
+Compute the sample Extended ACF (EACF) and use the Arima() function to try some other
+plausible models by experimenting with the orders chosen. Limit your models to q<= 2, p <= 2 and d <= 2. Use the model summary() function to compare the Corrected Akaike information criterion (i.e., AICc) values (Note: Smaller values indicated better models).
+
+
+```{r}
+TSA::eacf(usgdp_train.d2)
+```
+
+```{r}
+(fit1<-Arima(usgdp_train,order=c(0,2,1)))
+(fit2<-Arima(usgdp_train,order=c(1,2,2)))
+fit
+```
+
+The EACF of 2nd order differencing data suggests that ARIMA(0,2,1) and ARIMA(1,2,2) are also significant. Comparing these two model with the best model auto.aroma selected, ARIMA(2,2,2), we can see that ARIMA(2,2,2) has the smallest AICc, hence, ARIMA(2,2,2) is the best model.
+
+
+### (5 points) Question 6:
+Use the model chosen in Question 4 to forecast and plot the GDP forecasts with 80 and 95% confidence levels for 2005Q2 - 2006Q1 (Test Period).
+
+```{r}
+plot(forecast(fit,h=4),include=20)
+```
+
+
+### (5 points) Question 7:
+Compare your forecasts with the actual values using error = actual - estimate and plot the errors. (Note: Use the forecast $mean element for the forecast estimate)
+
+```{r}
+error<- usgdp_test-forecast(fit.uchanged,h=4)$mean
+plot(error, main='Forecast Error')
+```
+
+### (5 points)  Question 8: 
+Calculate the sum of squared error.
+
+```{r}
+sse<-sum(error**2)
+cat('Forecast SSE of ARIMA(2,2,2) is', sse,'\n')
+```
+
+
+
