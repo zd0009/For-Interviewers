@@ -1,0 +1,137 @@
+---
+title: "DM_Assignment4_Duo_Zhou_Part2"
+author: "Duo Zhou"
+date: "8/8/2020"
+output: html_document
+---
+```{r,warning=FALSE,include=FALSE}
+suppressMessages(library(dplyr))
+suppressMessages(library(ggplot2))
+library(rpart)
+library(rpart.plot)
+library(caret)
+```
+
+
+
+```{r}
+dataPath <- "C:/Users/zd000/Desktop/MSCA/Data Mining/Assignments/week4/"
+DB.train <-read.csv(paste(dataPath, 'DBtrain.csv', sep = '/'), header = TRUE)
+DB.test <-read.csv(paste(dataPath, 'DBtest.csv', sep = '/'), header = TRUE)
+head(DB.train)
+head(DB.test)
+dim(DB.train)
+dim(DB.test)
+```
+### Select categorical columns to covert to factors
+```{r}
+categorical_cols = c('race','admission_type_id','discharge_disposition_id','diag_1', 'max_glu_serum', 'A1Cresult', 'metformin', 
+     'repaglinide', 'nateglinide', 'chlorpropamide', 'glimepiride', 'glipizide', 'glyburide', 'tolbutamide', 
+     'pioglitazone', 'rosiglitazone', 'acarbose', 'miglitol', 'troglitazone', 'tolazamide', 'insulin', 'glyburide.metformin', 
+     'glipizide.metformin', 'metformin.pioglitazone','change','diabetesMed','readmitted','gender')
+
+DB.train[,categorical_cols]<-lapply(DB.train[ ,categorical_cols],as.factor)
+DB.test[,categorical_cols]<-lapply(DB.test[ ,categorical_cols],as.factor)
+head(DB.train[,categorical_cols])
+head(DB.test[,categorical_cols])
+
+```
+
+Build a classification tree model using all the variables in the set.
+```{r}
+DB.tree.model <- rpart(DB.train$readmitted~.,data=DB.train,control=rpart.control(cp=0,minsplit=30,xval=10, maxsurrogate=0))
+
+```
+
+```{r}
+rpart.plot(DB.tree.model)
+
+```
+
+This tree model is very hard to interpret. We can fix the interpetability problem by pruning the tree. The first step is to find the correct complexity parameter (cp). This is a value that penalizes overall
+fit by adding each node. 
+
+The optimal cp value can be found by choosing that minimizes xerror.
+
+```{r}
+plotcp(DB.tree.model)
+printcp(DB.tree.model)
+```
+
+Find the cp that produces the smallest xerror
+```{r}
+num<- which.min(DB.tree.model$cptable[,4])
+min_cp<- DB.tree.model$cptable[num,1]
+minimum_xerror <- DB.tree.model$cptable[num,4]
+cbind(num=num,min_cp=min_cp,minimum_xerror = minimum_xerror)
+
+```
+
+From the table above, one can see that with Cp=0.00061655. xerror has a minimum value of 0.92488.
+
+Build a pruned tree using that cp=0.00061655
+```{R}
+DB.tree.pruned <- rpart(DB.train$readmitted~.,data=DB.train,control=rpart.control(
+  cp=0.00061655,minsplit=30,xval=10, maxsurrogate=0))
+rpart.plot(DB.tree.pruned)
+```
+
+```{r}
+print(DB.tree.pruned)
+```
+
+Interactions
+From the printed summary of the pruned tree model. We can see that the root node is splitted using number of inpatient admissions. With less previous inpatient admission, patients are less likely to have diabetes readmission. The first terminal nodes occur in the third layer after using previous discharge dispositions as split condition. As the nodes further splitted, the  majority of terminal readmission nodes were classified based on MORE previous medical admissions and MORE different medical procedures.      
+
+
+Generate confusion matrix for training data for both full tree model and pruned tree model
+
+Full Tree Model
+```{r}
+confusionMatrix(reference=DB.train$readmitted,data=predict(DB.tree.model,type="class"))
+
+```
+
+Pruned Tree Model
+```{r}
+(cm1<-confusionMatrix(reference=DB.train$readmitted,data=predict(DB.tree.pruned,type="class")))
+
+```
+
+It is easy to see that the Full Tree Model gives a better accuracy than Pruned Tree Model. But the pruned tree model is much easier to interpret.
+
+### Holdout Validation Test
+
+```{r}
+pred.test<-predict(DB.tree.pruned,newdata=DB.test,type="class")
+(cm2<-confusionMatrix(reference = DB.test$readmitted, data=pred.test))
+
+```
+
+```{r}
+
+cbind(Train.Accuracy=as.numeric(cm1$overall[1]),
+      Test.Accuracy=as.numeric(cm2$overall[1]),
+      Train.TP=as.numeric(cm1$byClass[1]),
+      Test.TP=as.numeric(cm2$byClass[1]),
+      Train.FP=(1-as.numeric(cm1$byClass[2])),
+      Test.FP=(1-as.numeric(cm2$byClass[2]))
+      )
+```
+
+From above table, we can see that using pruned tree model, the predicted value Accuracy, True positive rate and False positive rate are very similar between train and test data.
+The pruned tree model result is very stable. 
+
+
+The accuracy of the pruned tree model is very close to the part 1 logistic Regression Model accuracy(0.6297). The logistical Regression model produced a slightly worse TP rate(0.8769), but it also produced a smaller FP rate (0.737). Overall both models yielded very similar results. Both are not good model due to the high FP rates. A better predictor selection should be considered for both models.    
+
+
+
+
+
+
+
+
+
+
+

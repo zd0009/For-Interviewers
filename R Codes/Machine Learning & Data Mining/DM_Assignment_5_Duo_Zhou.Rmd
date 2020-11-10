@@ -1,0 +1,218 @@
+---
+title: "DM_Assignment5_Duo_Zhou"
+author: "Duo Zhou"
+date: "8/22/2020"
+output: html_document
+---
+
+## Part 1 ##
+
+Use the GermanCredit data (package caret) in R Cluster-wise regression
+
+Load in Anil’s clustreg and clustreg.predict functions; 
+```{r}
+source('clustreg.R')
+source('clustreg_predict.R')
+```
+
+```{r include=FALSE}
+library(caret)
+```
+
+Use the other 6 numeric variables as independent variables. If you use caret package data, this will be columns 1 and 3 through 7 (typo is assignment). Align your data frame for training and test so that amount in the first column and the following 6 are the other 6 numeric variables.
+```{r}
+data("GermanCredit")
+
+#Select only numerical data
+GermanCredit<- GermanCredit[c(2, 1,3:7)]
+
+#Split train/test set
+set.seed(12345)
+train.inx<- sample(1:nrow(GermanCredit), 0.70 * nrow(GermanCredit))
+test.inx<- setdiff(1:nrow(GermanCredit), train.inx)
+
+Train.GC<- GermanCredit[train.inx,]
+Test.GC<- GermanCredit[test.inx, ]
+```
+
+Perform clusters wise regression for 1, 2, and 3 clusters. 
+```{r}
+GC.CR.1<- clustreg(Train.GC, 1, 1, 123, 1)
+GC.CR.2<- clustreg(Train.GC, 2, 2, 123, 10)
+GC.CR.3<- clustreg(Train.GC, 3, 2, 123, 10)
+```
+
+Explore the attributes and find the best R squared for each cluster solution. Plot this r squared as a function of number of clusters.
+
+```{r}
+names(GC.CR.1)
+```
+```{r}
+(rb.1<- GC.CR.1$rsq.best)
+(rb.2<- GC.CR.2$rsq.best)
+(rb.3<- GC.CR.3$rsq.best)
+```
+
+```{r}
+plot(c(rb.1, rb.2, rb.3),
+xlab = "# of Clusters", ylab = "R-Squared Best", type = "l")
+```
+
+Note that the elbow occurs when k=2.
+
+Perform holdout on each of the 3 cluster models using the clustreg.predict function. Arguments are the appropriate train model and holdout data.
+
+
+```{r}
+Test.pred.1<- clustreg.predict(GC.CR.1, Test.GC)
+Test.pred.2<- clustreg.predict(GC.CR.2, Test.GC)
+Test.pred.3<- clustreg.predict(GC.CR.3, Test.GC)
+```
+
+Find the best r squared from each of the holdout models. Show a table of R squared from train, r squared from holdout, and percentage decrease from train to holdout R squared: (Train R square – Holdout R square)/ Train R square.
+
+```{r}
+(rb.test.1<- Test.pred.1$rsq)
+(rb.test.2<- Test.pred.2$rsq)
+(rb.test.3<- Test.pred.3$rsq)
+```
+
+```{r}
+train.rsq<- c(rb.1,rb.2,rb.3)
+test.rsq<- c(rb.test.1,rb.test.2,rb.test.3)
+perc.dec<- (train.rsq-test.rsq)/train.rsq
+table<-cbind('Train R^2'=train.rsq,'Test R^2'=test.rsq,
+             'Percentage Decrease'=perc.dec)
+rownames(table)<-c('Model 1', 'Model 2','Model 3')
+as.table(table)
+```
+
+Out of the three models, Model 3 with 3 clusters and 10 iterations, gives the best R2 in both train and test data results. Model 3 also gives the smallest R^2 decrease. Model 3 is definitely the best model.
+
+Explore Model 3
+
+```{r}
+GC.CR.3$results
+```
+
+
+
+## Part 2 ##
+Use the Diabetes Readmissions data (on Canvas) to perform Linear and Quadratic Discriminant Analysis
+
+```{r include=FALSE}
+library(MASS)
+```
+
+Using undummy dataset. 
+```{r}
+dataPath <- "C:/Users/zd000/Desktop/MSCA/Data Mining/Assignments/week5/"
+DB<- read.csv(paste(dataPath, "diabetes_preprocessed_nodummies.csv", sep = "/"), header = TRUE)
+head(DB)
+```
+1. Select variables
+```{r}
+categorical_cols = c('gender','race','admission_type_id','discharge_disposition_id','change', 'diabetesMed', 'readmitted')
+
+DB[, categorical_cols] <- lapply(DB[, categorical_cols],as.factor)
+DB <- na.omit(DB)
+
+sel_cols <- c( "time_in_hospital", "num_lab_procedures", "num_procedures", "num_medications","number_outpatient", "number_emergency","race", "gender" , "age", "number_inpatient","number_diagnoses", "max_glu_serum", "A1Cresult","readmitted", "admission_type_id", "metformin", "repaglinide", "nateglinide", "glimepiride" ,  "glipizide", "glyburide", "tolbutamide","pioglitazone", "rosiglitazone", "acarbose","troglitazone", "tolazamide", "insulin", "change", "diabetesMed" , "glyburide.metformin","glipizide.metformin")
+
+DB <- DB[, sel_cols]
+```
+
+2. Split into train and test data sets
+```{r}
+set.seed(12345)
+
+train.ind<- sample(1:nrow(DB), 0.70 * nrow(DB))
+test.ind<- setdiff(1:nrow(DB), train.ind)
+
+DB.train<- DB[train.ind,]
+DB.test<- DB[test.ind, ]
+```
+
+
+3. Run LDA using select predictors and predict class results for train and holdout
+
+```{r}
+LDA.m<- lda(readmitted~., data=DB.train)
+LDA.train.pred  <- predict(LDA.m)$class
+LDA.test.pred <- predict(LDA.m, newdata = DB.test)$class
+```
+
+4. Run QDA using select predictors and predict class results for train and holdout
+
+```{r}
+QDA.m<- qda(readmitted~., data=DB.train)
+QDA.train.pred  <- predict(QDA.m)$class
+QDA.test.pred <- predict(QDA.m, newdata = DB.test)$class
+```
+
+5. How often in train and test do LDA and QDA make the same prediction?
+
+```{r}
+LQ.same<-c(sum(LDA.train.pred==QDA.train.pred),sum(LDA.test.pred==QDA.test.pred))
+p.LQ.same<-LQ.same/c(length(LDA.train.pred),length(LDA.test.pred))
+table2<-cbind('Number of times LDA=QDA'=LQ.same, "% LDA=QDA "=p.LQ.same)
+rownames(table2)<-c('Train', "Test")
+as.table(table2)
+```
+
+For both train and test data sets, about 88% of the predictions produced same result between LDA and QDA.
+
+
+6. Compare confusion matrix for Train and holdout for LDA results for validation. Do the same for QDA results.
+
+LDA
+```{r}
+
+(cm.LDA.train<-confusionMatrix(data=LDA.train.pred,reference=DB.train$readmitted))
+
+(cm.LDA.test<-confusionMatrix(data=LDA.test.pred,reference=DB.test$readmitted))
+
+```
+
+QDA
+
+```{r}
+
+(cm.QDA.train<-confusionMatrix(data=QDA.train.pred,reference=DB.train$readmitted))
+
+(cm.QDA.test<-confusionMatrix(data=QDA.test.pred,reference=DB.test$readmitted))
+
+```
+
+
+Summary of TP, FP and Accuracy
+```{r}
+TP<-c(TP.LDA.train=as.numeric(cm.LDA.train$byClass[1]),
+      TP.LDA.test=as.numeric(cm.LDA.test$byClass[1]),
+      TP.QDA.train=as.numeric(cm.QDA.train$byClass[1]),
+      TP.QDA.test=as.numeric(cm.QDA.test$byClass[1]))
+      
+      
+FP<-c(FP.LDA.train=1-as.numeric(cm.LDA.train$byClass[2]),
+      FP.LDA.test=1-as.numeric(cm.LDA.test$byClass[2]),
+      FP.QDA.train=1-as.numeric(cm.QDA.train$byClass[2]),
+      FP.QDA.test=1-as.numeric(cm.QDA.test$byClass[2]))
+
+
+
+accuracy<-c(accu.LDA.train=as.numeric(cm.LDA.train$overall[1]),
+      accu.LDA.test=as.numeric(cm.LDA.test$overall[1]),
+      accu.QDA.train=as.numeric(cm.QDA.train$overall[1]),
+      accu.QDA.test=as.numeric(cm.QDA.test$overall[1]))
+
+
+table3<-cbind(TP,FP,accuracy)
+rownames(table3)<-c('LDA.Train','LDA.Test','QDA.Train','QDA.Test')
+as.table(table3)
+```
+
+According to the confusion matrix, LDA produced a slightly better accuracy than QDA on both train and test data. The accuracy is very similar to what we obtained from decision tree and logistic models in assignment 4. Same TP/FP problem presisted in LDA and QDA model. Although both LDA and QDA produced high TP(sensitivity) values, they also produced very high FP(1-Specificity). A closer examination is needed in predictor selection.
+
+
+
+

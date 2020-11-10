@@ -1,0 +1,160 @@
+---
+title: "DM_Assignment4_Duo_Zhou_Part1"
+author: "Duo Zhou"
+date: "8/7/2020"
+output: html_document
+---
+
+```{r}
+dataPath <- "C:/Users/zd000/Desktop/MSCA/Data Mining/Assignments/week4/"
+DB.train <-read.csv(paste(dataPath, 'DBtrain.csv', sep = '/'), header = TRUE)
+DB.test <-read.csv(paste(dataPath, 'DBtest.csv', sep = '/'), header = TRUE)
+head(DB.train)
+head(DB.test)
+dim(DB.train)
+dim(DB.test)
+```
+### Select categorical columns to covert to factors
+```{r}
+categorical_cols = c('race','admission_type_id','discharge_disposition_id','diag_1', 'max_glu_serum', 'A1Cresult', 'metformin', 
+     'repaglinide', 'nateglinide', 'chlorpropamide', 'glimepiride', 'glipizide', 'glyburide', 'tolbutamide', 
+     'pioglitazone', 'rosiglitazone', 'acarbose', 'miglitol', 'troglitazone', 'tolazamide', 'insulin', 'glyburide.metformin', 
+     'glipizide.metformin', 'metformin.pioglitazone','change','diabetesMed','readmitted','gender')
+
+DB.train[,categorical_cols]<-lapply(DB.train[ ,categorical_cols],as.factor)
+DB.test[,categorical_cols]<-lapply(DB.test[ ,categorical_cols],as.factor)
+head(DB.train[,categorical_cols])
+head(DB.test[,categorical_cols])
+
+```
+
+Fitting the full model
+```{r,warning=FALSE}
+full.model <- glm(readmitted~.,family=binomial(link='logit'),data=DB.train)
+(full.model.aic <- full.model$aic)
+```
+
+Using Step function with direction=both to get the model with the best AIC
+```{r,warning=FALSE}
+best.AIC.model.both<-step(glm(readmitted~.,family=binomial(link='logit'),data=DB.train)
+                            ,direction="both",trace=FALSE)
+```
+
+```{r}
+summary(best.AIC.model.both)
+
+```
+
+We need to find the best Threshold value for the model, let us first take a look at the ROC curve.
+
+```{r}
+library(AUC)
+plot(roc(best.AIC.model.both$fitted.values,DB.train$readmitted))
+auc(roc(best.AIC.model.both$fitted.values,DB.train$readmitted))
+```
+
+It is hard to find the best TP/FP point from the ROC curve. Let us calculate the TP/FP ratio and accuracy at different threhold values. Threshold values are chosen bewteen 0.05 to 0.95 with an increment of 0.05.
+
+```{r}
+library(caret)
+TP<-c()
+FP<-c()
+TPoverFP<-c()
+th<-c()
+accu<-c()
+for(threshold in seq(0.05,0.95,0.05)){
+xp = best.AIC.model.both$fitted.values
+xp[xp >= threshold] = 1
+xp[xp <  threshold] = 0
+xp<-as.factor(xp)
+cm<-confusionMatrix(data=xp,reference=DB.train$readmitted)
+TP<-c(TP,as.numeric(cm$byClass[1]))
+FP<-c(FP,(1-as.numeric(cm$byClass[2])))
+TPoverFP<-c(TPoverFP,as.numeric(cm$byClass[1])/(1-as.numeric(cm$byClass[2])))
+th<-c(th,threshold)
+accu<-c(accu,as.numeric(cm$overall[1]))
+}
+
+
+
+cbind(th=th,accuracy=accu,TP=TP,FP=FP,TPoverFP=TPoverFP)
+plot(th,TPoverFP,xlab='Threshold',ylab='TP/FP')
+plot(th,accu,xlab='Threshold',ylab='Accuracy')
+```
+
+From the table above, we can see that the TP/FP value decreases as threshold increases. In this case, Accuracy is a better measurement for picking the best threshold value. The accuracy is highest(0.627), when threshold is 0.5.
+
+Let's construct the Confusion Matrix using Threshold = 0.5. 
+
+```{r}
+xp = best.AIC.model.both$fitted.values
+xp[xp >= 0.5] = 1
+xp[xp <  0.5] = 0
+xp<-as.factor(xp)
+confusionMatrix(xp,DB.train$readmitted)
+```
+
+Based on the Confusion Matrix, we can see that with Threshold=0.5, the accuracy is 0.6267 and sensitivity(TP) is 0.8774. Note that the False Positive(1-Specificity) is also very high(0.741).
+
+Performing holdout validation using test data
+
+```{r}
+
+fitted.results <- predict(best.AIC.model.both,
+                          newdata=DB.test,type='response')
+
+#library(caret)
+TP<-c()
+FP<-c()
+TPoverFP<-c()
+th<-c()
+accu<-c()
+for(threshold in seq(0.05,0.95,0.05)){
+xp1<-fitted.results
+xp1[xp1 >= threshold] = 1
+xp1[xp1 <  threshold] = 0
+xp1<-as.factor(xp1)
+cm<-confusionMatrix(data=xp1,reference=DB.test$readmitted)
+TP<-c(TP,as.numeric(cm$byClass[1]))
+FP<-c(FP,(1-as.numeric(cm$byClass[2])))
+TPoverFP<-c(TPoverFP,as.numeric(cm$byClass[1])/(1-as.numeric(cm$byClass[2])))
+th<-c(th,threshold)
+accu<-c(accu,as.numeric(cm$overall[1]))
+}
+
+plot(th,TPoverFP,xlab='Threshold',ylab='TP/FP')
+plot(th,accu,xlab='Threshold',ylab='Accuracy')
+cbind(th=th,accuracy=accu,TP=TP,FP=FP,TPoverFP=TPoverFP)
+```
+
+For the test data, accuracy is highest(0.627), when threshold is 0.5 as well.
+
+```{r}
+xp1 = fitted.results
+xp1[xp1 >= 0.5] = 1
+xp1[xp1 <  0.5] = 0
+xp1<-as.factor(xp1)
+confusionMatrix(data=xp1,reference=DB.test$readmitted)
+```
+
+Based on the Confusion Matrix, we can see that with Threshold=0.5, the accuracy is 0.6297, sensitivity(TP) is 0.8769 and the False Positive(1-Specificity) is still very high(0.737). The result is very similar to training data fit which indicates a good stability of our model. Holdout validation is a success.
+
+Gain Chart
+```{r}
+library(gains)
+gains(as.numeric(DB.test$readmitted)-1,fitted.results,10)
+
+plot(gains(as.numeric(DB.test$readmitted)-1,fitted.results,10))
+
+```
+
+ROC Curve
+```{r}
+library(AUC)
+plot(roc(fitted.results,DB.test$readmitted))
+auc(roc(fitted.results,DB.test$readmitted))
+```
+
+Based on the Gains Chart, it takes 9 deciles to cover majority of the reamitted cases. 
+The AUC is 0.6404412 and accuracy is 0.6297. Although the true positive is 0.8769, we also have a very high False Positive(0.737). This is not a good model for the data set. A better method of picking predictors should be considered.  
+

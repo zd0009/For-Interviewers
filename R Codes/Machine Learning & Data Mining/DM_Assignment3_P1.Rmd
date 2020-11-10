@@ -1,0 +1,164 @@
+---
+title: "DM Assignment3 Part 1"
+author: "Duo Zhou"
+date: "7/25/2020"
+output:
+  html_document:
+    df_print: paged
+---
+## Assignment 3 Part 1
+```{r}
+dataPath <- "C:/Users/zd000/Desktop/MSCA/Data Mining/Assignments/week3/"
+GC <-read.csv(paste(dataPath, 'GermanCredit.csv', sep = '/'), header = TRUE)
+GC<-GC[,-1]
+```
+
+
+Before we start LCA clustering, we need to combine all the related categorical variables in the oringinal dataset into columns of factors. 
+```{r}
+
+co<-function(cols,dataframe){
+  combined<-dataframe[,cols]
+  levels<- c(1:length(cols))
+  combined <- t(t(combined)*levels)
+  combined.final<-combined[,1]
+  for(i in 2:length(levels)){
+  combined.final<-combined.final+combined[,i]
+  } 
+  combined.final
+}
+
+
+```
+
+The variables that are related and have similar number of categorical levels are Checking Account, Savings Account, Employment Duration, credit hisotry and Job Type
+
+```{r}
+checking <- co(11:14,GC)
+saving <- co(31:35,GC)
+emp.dur<- co(36:40,GC)
+cred.his <- co(15:19,GC)
+job.type <-  co(59:62,GC)
+```
+
+
+```{r,warning=FALSE}
+library(poLCA)
+```
+
+
+Estimate the model with 2 to 7 clusters and runs every model 100 timesand 
+Return the corresponding best AIC and BIC value models out of the 100 runs to locate the global minimum.
+
+```{r}
+
+LCA_best_models<- function(data,formula,max.class=7){
+  ret<-NULL
+  min_aic<-100000
+  min_bic<-100000
+  clust_bic<-c()
+  clust_aic<-c()
+  for(i in 2:max.class){
+    for(j in 1:100){
+      res<-poLCA(formula,data,nclass=i,maxiter=1000,tol=.001,
+                 verbose=FALSE)
+      if(res$bic < min_bic){
+        min_bic<-res$bic
+        LCA_best_model_BIC<-res
+      }
+      if(res$aic < min_aic){
+        min_aic<-res$aic
+        LCA_best_model_AIC<-res
+      }
+    }
+    clust_bic<-rbind(clust_bic,c(i,min_bic))
+    clust_aic<-rbind(clust_aic,c(i,min_aic))
+  }
+  ret$LCA_best_model_BIC<-LCA_best_model_BIC
+  ret$min_bic<-min_bic
+  ret$LCA_best_model_AIC<-LCA_best_model_AIC
+  ret$min_aic<-min_aic
+  ret$clust_bic<-as.data.frame(clust_bic)
+  ret$clust_aic<-as.data.frame(clust_aic)
+  return(ret)
+}
+
+```
+
+### Split the data to train and test sets. 70%:30%
+```{r}
+set.seed(312435)
+train_ind <- sample(1:nrow(GC),as.integer(nrow(GC)*0.7),replace=FALSE)
+my.var<-data.frame(checking,saving,emp.dur,cred.his,job.type)
+mv.train<-my.var[train_ind,]
+mv.test<-my.var[-train_ind,]
+
+```
+
+### Selecting the best model using the entire data set
+
+```{r}
+
+formula<-cbind(checking,saving,emp.dur,cred.his,job.type)~1
+best.model<- LCA_best_models(data=my.var,formula=formula)
+
+(aic.bic <- cbind(Class.Number=best.model$clust_aic[,1],
+                  AIC=best.model$clust_aic[,2],BIC=best.model$clust_bic[,2],
+                  AIC.Plus.BIC=best.model$clust_aic[,2]+best.model$clust_bic[,2]))
+
+# generate the scree plot
+
+par(mar=c(5,4,4,4)+0.3)
+plot(aggregate(V2~V1,data=best.model$clust_aic,function(x)min(x)),type="b",col="red",
+ylab="AIC",xlab="Number of Classes")
+par(new=TRUE)
+plot(aggregate(V2~V1,data=best.model$clust_bic,function(x)min(x)),type="b",axes=FALSE,
+xlab="",ylab="",col="blue")
+axis(4,at=pretty(range(aggregate(V2~V1,data=best.model$clust_bic,function(x)min(x))[,2])),
+col.axis="blue")
+mtext("BIC",side=4,col="blue")
+
+```
+
+From above graph, we found that AIC value reaches minimum when the number of cluster equals 5, while the BIC value is minimum when the number of cluster is 3. Let us take a look at the combined AIC and BIC values. 
+```{r}
+aic.plus.bic<- (best.model$clust_aic+best.model$clust_bic)/2
+plot(aic.plus.bic,type = "o",xlab="Number of clusters",ylab="(AIC+BIC)/2 value",col="red")
+```
+
+We can see that when class number is 3, there is an 'elbow' in terms of decrease in values for AIC, BIC and (AIC+BIC)/2. We should choose nclass=3 as our best model.
+
+### Run the best model with training set and interpret the solution
+
+Here we set nrep=500 to avoid local min
+```{r}
+train3.model<-poLCA(formula,mv.train,nclass=3,maxiter=500,tol=.001,verbose=FALSE,graphs=TRUE,nrep=1000)
+
+```
+
+
+From the probability plot, we can see that the Class 1 (top) mostly consists of skilled employee, who have good credit history. They have steady employment and in their early career. They end to save very little. This group represents typical young professionals.
+
+Class 2 (middle) are also mostly skilled employees. But they are in their mid-career. Their money, income, credit history and work history are somewhat evenly distributed across the spectrums. I think they represent the majority of the middle skilled people. How good they are with their finance is highly individualistic.  
+
+Class 3(bottom) mostly consists of highly qualified/self-employed people and people with lowest work skills. This is a highly polarized group. People in this group either worked for many years or are unemployed. The checking/savings and credit history of this group are at the end of each spectrum.
+
+
+
+### Perform holdout validation of trained LCA
+```{r}
+test3.model<-poLCA(formula,mv.test,nclass=3,maxiter=500,tol=.001,verbose=FALSE,
+graphs=TRUE,nrep=500,probs.start=train3.model$probs)
+```
+
+```{r}
+rbind(Train=table(train3.model$predclass)/length(train3.model$predclass),
+Test=table(test3.model$predclass)/length(test3.model$predclass))
+```
+
+The percentage of cases assigned to each class is very different between train and test models. The holdout is not very successful.
+
+### Question 5 is not applicable to this assignment.
+
+
+
