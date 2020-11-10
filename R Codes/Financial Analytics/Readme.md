@@ -1,6 +1,7 @@
 # This folder contains assignments and course project from Financial Analytics course.
-1. Course Project: Part 1: Efficient Frontier and CAPM, Market-Neutral Portfolios <br>
-                   Part 2: APT, Market-Neutral Portfolio and Hedging Market-Neutral Portfolio using regression model with stationary residuals and cointegration. <br>                   
+1. Course Project: <br>
+Part 1: Efficient Frontier and CAPM, Market-Neutral Portfolios <br>
+Part 2: APT, Market-Neutral Portfolio and Hedging Market-Neutral Portfolio using regression model with stationary residuals and cointegration. <br>                   
 2. Asssgnment 1: Analysis of S&P500 Daily Return <br>
 3. Asssgnment 2: Efficient Frontier, CAPM model, and APT model(using Principal Component Analysis) on SNP500 health care sector and industrial sector stocks. <br>
 4. Asssgnment 3: Time Series ARIMA Model Basic <br>
