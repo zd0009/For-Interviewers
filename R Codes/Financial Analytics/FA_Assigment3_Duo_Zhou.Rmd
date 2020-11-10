@@ -1,0 +1,287 @@
+---
+title: "FA_Assignment3_Duo_Zhou"
+author: "Duo Zhou"
+date: "7/13/2020"
+output:
+  pdf_document: default
+  word_document: default
+---
+
+### This assignment helps understanding linear models for time series
+```{r, warning=FALSE, include=FALSE}
+library(tseries)
+library(forecast)
+library(TSA)
+```
+
+### 1. Exercise 2 on page 125
+
+
+Use the file m-dec125910-6111.txt
+```{r}
+datapath<-"C:/Users/zd000/Desktop/MSCA/Financial Analytics/Assignments/week3/"
+dat<-read.table(paste(datapath,"m-dec125910-6111.txt",sep="/"),header=T)
+head(dat)
+dim(dat)
+```
+
+
+### For CRSP portfolios of Decile 2 and Decile 10 returns test null hypothesis that the first 12 lags of autocorrelations equal zero with 5% level
+
+
+### Decile 2
+
+```{r}
+# decile 2 simple returns
+d2 <- dat$dec2
+d2.ts <- ts(d2,frequency = 12, start=c(1961, 1))
+# Plot the time series and its ACF for simple returns
+plot(d2.ts, xlab="year", ylab="returns",type="l")
+title(main = "Simple returns of Decile 2")
+f1=acf(d2,lag=12)
+```
+
+#### Z-Score Test
+
+
+```{r}
+tt=f1$acf*sqrt(length(d2))
+critial.value=rep(qnorm(.975,0,1),length(tt))
+compare=cbind(tt,qnorm(.975,0,1),tt>critial.value)
+colnames(compare)=c('tt','critical value','tt > critial.value')
+compare
+```
+
+Based on Z-scores test, only the first lag can reject the null hypothesis that autocorrelation equals zero with 5% level. The rest can not reject the null hypothesis.
+
+Ljung-Box Test
+
+```{r}
+Box.test(d2.ts, lag=12, type="Ljung")
+```
+
+Based on Ljung-Box Test, p-values is larger that 0.05, We cannot reject the null hypothesis that all of the first 12 lags of autocorrelations are zero at the 5% level. 
+There is an inconsistancy between Z-score and Ljung-Box Test. However, according to both ACF and PACF plot, we can clearly see an acorrelation of the first lag. We conclude that the first lag autocorrelation is significant enough to be non-zero.
+
+### Decile 10
+```{r}
+# decile 10 simple returns
+d10 <- dat$dec10
+d10.ts <- ts(d10,frequency = 12, start=c(1961, 1))
+# Plot the time series and its ACF for simple returns
+plot(d10.ts, xlab="year", ylab="returns",type="l")
+title(main = "Simple returns of Decile 2")
+f1=acf(d10,lag=12)
+```
+
+#### Z-Score Test
+
+```{r}
+tt=f1$acf*sqrt(length(d10))
+critial.value=rep(qnorm(.975,0,1),length(tt))
+compare=cbind(tt,qnorm(.975,0,1),tt>critial.value)
+colnames(compare)=c('tt','critical value','tt > critial.value')
+compare
+```
+
+Based on Z-scores test, both the first and 12th lag can reject the null hypothesis that autocorrelation equals zero with 5% level. 
+
+#### Ljung-Box Test
+
+```{r}
+Box.test(d10.ts, lag=12, type="Ljung")
+```
+Based on Ljung-Box Test, p-values is smaller that 0.05, We can reject the null hypothesis that all of the first 12 lags of autocorrelations are zero at the 5% level. This conclusion is consistant with the Z-score test, since Z-score test rejected that lag 1 and 12 autocorrelations are zero at 5% level.
+
+### Fit ARMA model for returns of Decile2, perform model checking and write down the fitted model
+
+
+```{r,warning=FALSE,include=FALSE}
+library(TSA)
+```
+
+
+```{r}
+
+acf(d2, lag =24)
+pacf(d2, lag =24)
+```
+
+Based on ACF plot, we can see that MA(1) is a possible condidate for the model. PACF indicated that ARMA(1,1) could also be a model condidate. In addtion, PACF plot also indicated that there could be an autocorrelation for the 21st lag. It is too far into the future and only slightly above critical value. We could choose MA(1) or ARMA(1,1).  
+
+```{r}
+
+eacf(d2.ts) # suggests the best fit is an MA(1)
+auto.arima(d2.ts) # suggests the best fit is an MA(1)
+
+```
+
+Both EACF and auto arima suggested MA(1) to be the best fit model.
+
+
+```{r}
+(ARMA11 <- arima(d2.ts, order=c(1,0,1)))
+(MA1 <- arima(d2.ts, order=c(0,0,1)))
+
+```
+
+We can see that AIC for MA(1), -1988.08, is slightly lower than AIC of ARMA(1,1), -1987.68. MA(1) is a better choice.
+
+### Write down the model                                                                         
+
+$\xi$ is the varible of the time series and $\alpha$ is the error. 
+
+B($X_{t}$)=$X_{t-1}$
+
+Equations for both models
+
+ARMA(1,1):
+$\xi_{t}$=0.0093-0.4039B($\xi_{t}$)+0.5265B($\alpha_{t}$)+$\alpha_{t}$, $\sigma^{2}_{\alpha}$=0.002217
+
+MA(1):
+$\xi_{t}$=0.0093+0.1307B($\alpha_{t}$)+$\alpha_{t}$, $\sigma^{2}_{\alpha}$=0.002223
+
+Note: MA(1) is our choice.
+
+
+### Model checking using Ljung-Box Test with Adjusted Degrees of Freedom. 
+
+Check if residuals behave like white noise using Box-Ljung test. (12 and 24 lags)
+```{r}
+Box.test(MA1$residuals, lag=12, type="Ljung")
+Box.test(MA1$residuals, lag=24, type="Ljung")
+
+```
+
+Calculate adjusted p-value for the same statistic. 
+
+Adjested DF for 12 lags should be 12-1=11
+
+Adjested DF for 24 lags should be 24-1=23
+```{r}
+pv12=1-pchisq(9.4993,11) # Compute p value using 11 degrees of freedom
+pv24=1-pchisq(20.803,23) # Compute p value using 23 degrees of freedom
+paste(c(pv12,pv24))
+```
+
+Bsed on the p-value calculated by DF adjusted Box-Ljung test, We cannot reject the hypothesis that all autocorrelations of lag residuals are equal to zero at 5% level. The residuals behave like white noise.
+
+### Use the fitted model to produce 1- to 12-step ahead forecasts of the series and the associated standard errors of forecasts.
+
+
+```{r}
+MA1_train <- arima(d2.ts[1:597], order=c(0,0,1))
+prd <- predict(MA1_train,12)
+cbind(Actual=as.vector(tail(d2.ts,12)),
+Predicted=as.vector(prd$pred),Standard.Error=as.vector(prd$se))
+```
+
+```{r}
+cbind(train.mean=mean(d2.ts[1:597]),train.sd=sd(d2.ts[1:597]))
+
+```
+
+It is clear that the predicted value converges to the mean of the time series and standard error converges to the standard deviation of the time series. The model eventually gives the unconditional mean value as a prediction. The quality of the forecast is very poor.
+
+
+### 2. Exercise 4 on page 126
+
+Consider the monthly yields of Moody's Aaa & Baa seasoned bonds from January 1919 to November, 2011. The data are obtained from FRED of Federal Reserve Bank of St. Louis. Consider the log series of monthly Aaa bond yields. Build a time series model for the series, including model checking.
+
+```{r}
+da=read.table(paste(datapath,"m-aaa-1911.txt",sep="/"),header=T)
+tail(da)
+dim(da) #1115 4
+ln.aaa<- log(da$yield/12/100)
+# Build a time series
+ln.aaa.ts <- ts(ln.aaa, frequency=12,start=c(1919,1))
+plot(ln.aaa.ts)
+par(mfrow=c(1,2))
+acf(ln.aaa, lag =24)
+pacf(ln.aaa, lag =24)
+```
+
+From both the time seires plot and ACF plots, we can see that the time series is not stationary.
+We need to take the first order differencing.
+
+```{r}
+ln.aaa.diff<- diff(ln.aaa)
+# Build a time series
+ln.aaa.diff.ts <- ts(ln.aaa.diff, frequency=12,start=c(1919,1))
+plot(ln.aaa.diff.ts)
+par(mfrow=c(1,2))
+acf(ln.aaa.diff, lag =24)
+pacf(ln.aaa.diff, lag =24)
+```
+
+After the first order differencing, both ACF and Time series plots look stationary. Based on the ACF plot, we can see that first lag auto correlation is non-zero, so MA(1) can be a candidate. Based on PACF plot, we can see the first two PACs are non-zero, so ARMA(2,1) can also be a candidate.
+
+```{r}
+# EACF suggests the best fit is MA(1)
+eacf.ln.aaa.diff<-eacf(ln.aaa.diff.ts,6,12)$eacf
+colnames(eacf.ln.aaa.diff)<-0:12
+rownames(eacf.ln.aaa.diff)<-0:6
+Compare.with<-2/sqrt(length(ln.aaa.diff.ts))
+print(abs(eacf.ln.aaa.diff)-Compare.with,digits=2)
+# auto.arima suggests the best fit is also MA(1) (ARMA(0,1,1)) taking the first order differecing.
+auto.arima(ln.aaa.ts) 
+
+```
+
+Both EACF and auto.arima suggest that MA(1) is the best model. Let take a look at both MA(1) and ARMA(2,1).
+
+```{r, warning=FALSE}
+MA1.aaa<- arima(ln.aaa.ts, order=c(0,1,1))
+ARMA21.aaa<- arima(ln.aaa.ts, order=c(2,1,1))
+MA1.aaa
+ARMA21.aaa
+cbind(MA1.AIC=AIC(MA1.aaa),
+      MA1.BIC=AIC(MA1.aaa,k = log(length(sunspots))),
+      ARMA21.AIC=AIC(ARMA21.aaa),
+      ARMA21.BIC=AIC(ARMA21.aaa,k = log(length(sunspots))))
+```
+
+We can see that ARMA(2,1) has a smaller AIC and MA(1) has a smaller BIC. It is hard to say which one is a better model fit.
+
+### Model checking using Ljung-Box Test with Adjusted Degrees of Freedom.
+Check if residuals behave like white noise using Box-Ljung test. (12 and 24 lags)
+
+Checking MA(1) Model
+```{r}
+Box.test(MA1.aaa$residuals, lag=12, type="Ljung")
+Box.test(MA1.aaa$residuals, lag=24, type="Ljung")
+```
+Calculate adjusted p-value for the same statistic.
+
+Adjested DF for 12 lags should be 12-1=11
+
+Adjested DF for 24 lags should be 24-1=23
+```{r}
+pv12.MA1=1-pchisq(14.619,11) # Compute p value using 11 degrees of freedom
+pv24.MA1=1-pchisq(25.276,23) # Compute p value using 23 degrees of freedom
+paste(c(pv12.MA1,pv24.MA1))
+```
+
+Checking ARMA(2,1) Model
+```{r}
+Box.test(ARMA21.aaa$residuals, lag=12, type="Ljung")
+Box.test(ARMA21.aaa$residuals, lag=24, type="Ljung")
+```
+
+Calculate adjusted p-value for the same statistic.  
+
+Adjested DF for 12 lags should be 12-3=9
+
+Adjested DF for 24 lags should be 24-3=21
+```{r}
+pv12.ARMA21=1-pchisq(8.85,9) # Compute p value using 11 degrees of freedom
+pv24.ARMA21=1-pchisq(18.448,21) # Compute p value using 23 degrees of freedom
+paste(c(pv12.ARMA21,pv24.ARMA21))
+```
+
+Based on the p-value calculated by DF adjusted Box-Ljung test, We cannot reject the hypothesis that all autocorrelations of lag residuals are equal to zero at 5% level for either model. The residuals of both models behave like white noises.
+
+
+
+
+

@@ -1,0 +1,274 @@
+---
+title: "FA_Assignment8_Duo_Zhou"
+author: "Duo Zhou"
+date: "8/11/2020"
+output: pdf_document
+---
+```{r,include=FALSE}
+library(fGarch)
+library(zoo)
+```
+## Exercise 1 on page 239.
+Answer questions using 5% significance level in tests and 10 lags of serial correlations for return series.
+
+Consider daily returns of ETF SPDR S&P 500 from file d-spy-0111.txt.
+Transform the simple returns into log-returns
+
+### a). Is the expected log-return zero? Are there any serial correlations in the log returns? Is there ARCH effect in the log-returns?
+
+Read the data for monthly log-returns and create returns.
+```{r}
+datapath <- "C:/Users/zd000/Desktop/MSCA/Financial Analytics/Assignments/week8/"
+da=read.table(paste(datapath,"d-spy-0111.txt",sep="/"),header=T)
+head(da)
+log.rtn=log(da$rtn+1)
+logrtn.ts=ts(log.rtn)
+```
+
+Plot returns
+```{r}
+plot(logrtn.ts,type='l',xlab='time',ylab='ln-rtn') # time plot
+```
+
+Test H0: ="Mean Equals Zero"
+```{r}
+t.test(log.rtn)  # testing the mean of returns
+```
+The null hypothesis is rejected at 5% level, so $\mu_{t}=\mu+\epsilon_{t}$ and could be modeled by a stationary time series model.
+
+Run Box-Ljung test with lag=10. H0: = "Serial Correlations are Zero".
+```{r}
+Box.test(log.rtn,lag=10,type='Ljung')
+```
+
+The null hypothesis can not be rejected at 5% level. There are serial correlations.
+
+Plot ACF of returns and ACF of absolute returns.
+
+```{r}
+par(mfcol=c(2,1))
+acf(log.rtn,lag=24) # ACF plots
+acf(abs(log.rtn),lag=24)
+```
+
+ It is hard to see the ACF of log returns to be outside the bonds. The ACF of absolute returns is definitely outside the bounds.
+
+```{r}
+Box.test(abs(log.rtn),lag=10,type='Ljung')
+```
+The Box-Ljung test confirms rejection of zero serial correlation null hypothesis for absolute log returns at 5% level.
+
+###  Testing for ARCH effect
+
+Calculate squared residuals and apply Box-Ljung test.
+
+```{r}
+## ARCH test
+y=log.rtn-mean(log.rtn)
+Box.test(y^2,lag=10,type='Ljung')
+```
+According to Box-Ljung test the zero correlations hypothesis is rejected at 5% level. This is an indication of ARCH effect.
+
+The sourced script of the text book, archTest, applies Engle’s test:
+```{r}
+archTest <- function(rtn,m=10){
+  # Perform Lagrange Multiplier Test for ARCH effect of a time series
+  # rtn: time series
+  # m: selected AR order
+  #
+  y=(rtn-mean(rtn))^2
+  T=length(rtn)
+  atsq=y[(m+1):T]
+  x=matrix(0,(T-m),m)
+  for (i in 1:m){
+    x[,i]=y[(m+1-i):(T-i)]
+  }
+  md=lm(atsq~x)
+  summary(md)
+}
+archTest(log.rtn,10)
+```
+The output confirms ARCH effect.
+
+### b). Fit Gaussian ARMA-GARCH model for the log-return series. Perform model checking. Obtain the QQ-plot of the standardized residuals. Write down the fitted model. [Hint: use GARCH(2,1)]
+
+Look at ACF and PACF of the squared log returns.
+```{r}
+acf(log.rtn^2)
+pacf(log.rtn^2)
+```
+The PACF shows the 2nd lag is most significant. We can try ARCH(2). ACF shows many lags of significance. It is conventional to just try GARCH(1) for the sigma squared effect.   
+Fit GARCH(2,1) with Gaussian innovations.
+
+```{r}
+m1=garchFit(~1+garch(2,1),data=log.rtn,trace=F)
+summary(m1)
+```
+
+The resulting model is:
+$r_{t} = \mu + a_{t}$
+$a_{t}=\sigma_{t} \epsilon_{t}$
+$\sigma^{2}_{t} = \alpha_{0} + \alpha_{1}a^{2}_{t-1} + \alpha_{2}a^{2}_{t-2} + \beta_{1}\sigma^{2}_{t-1}$
+$\mu$ = 5.7243e-04 $\alpha_{0}$ = 2.3226e-06 $\alpha_{1}$ = 1.9896e-03 $\alpha_{2}$= 1.1165e-01 and $\beta_{1}$= 8.7049e-01 
+Note that alpha1 is not significant.
+
+Based on the Ljung-Box Test, at 5% level and lag=10, 15 and 20, we can not reject the H0: there is zero auto correlation for reresiduals and residual squares.
+
+Let us analyze the residuals
+```{r}
+resi=residuals(m1,standardize=T)
+tdx=c(1:length(resi))
+par(mfcol=c(3,1))
+plot(tdx,resi,xlab='year',ylab='stand-resi',type='l')
+acf(resi,lag=20)
+pacf(resi^2,lag=20)
+```
+
+The ACF and PACF confirms that standardized residuals do not have autocorrelation in the first 20 lags. 
+
+Plot the QQ-plot  and histogram of the standardized residuals.
+```{r}
+hist(resi)
+qqnorm(resi)
+qqline(resi)
+```
+
+The qq plot and histogram of the standardized residuals show a left skewness and some kurtosis. This is also confirmed by the rejection of H0 from both Jarque-Bera Test and Shapiro-Wilk Test.  
+
+Plot standardized residuals and conditional variances.
+```{r}
+v1<-m1@h.t
+vol=ts(v1)
+res=ts(resi)
+par(mfcol=c(2,1))  # Show volatility and residuals
+plot(vol,xlab='time',ylab='volatility',type='l')
+plot(res,xlab='time',ylab='st. resi',type='l') 
+
+```
+
+Standardized residuals have only a few outliers, look pretty good. Conditional variances show characteristic jumps and clustering. Volatility was high during the 2008 ressesion.
+
+Compare volatility estimated by GARCH with historical realized volatility.
+
+```{r}
+realizedVolatility<-rollapply(log.rtn,width=10,partial=T,by=1, sd)
+matplot(1:length(log.rtn),cbind(m1@sigma.t,realizedVolatility),type="l",lty=1,lwd=2)
+legend("topright",legend=c("GARCH","Realized"),
+       lty=1,col=c("black","red"),lwd=2)
+cor(cbind(sigma=m1@sigma.t,RV=realizedVolatility))
+```
+The Predicted Velotility is very similar to realized velotility, the correlation is very high 0.887338.
+
+```{r}
+# Obtain plot of predictive intervals
+par(mfcol=c(1,1))
+uppGarch=m1@fitted+2*sqrt(v1)
+lowGarch=m1@fitted-2*sqrt(v1)
+uppReal=m1@fitted+2*realizedVolatility
+lowReal=m1@fitted-2*realizedVolatility
+tdx=c(1:length(resi))
+plot(tdx,log.rtn,xlab='time',ylab='series',type='l',ylim=c(-0.14,0.14))
+lines(tdx,uppGarch,lty=2,col='red')
+lines(tdx,lowGarch,lty=2,col='red')
+lines(tdx,uppReal,lty=2,col='blue')
+lines(tdx,lowReal,lty=2,col='blue')
+abline(h=m1@fitted[1])
+legend("topright",legend=c("GARCH","Realized"),
+       lty=1,col=c("red","blue"),lwd=2)
+
+plot(tdx[1500:2000],log.rtn[1500:2000],
+     xlab='time',ylab='series',type='l',ylim=c(-0.14,0.14))
+lines(tdx[1500:2000],uppGarch[1500:2000],lty=2,col='red')
+lines(tdx[1500:2000],lowGarch[1500:2000],lty=2,col='red')
+lines(tdx[1500:2000],uppReal[1500:2000],lty=2,col='blue')
+lines(tdx[1500:2000],lowReal[1500:2000],lty=2,col='blue')
+abline(h=m1@fitted[1])
+legend("topright",legend=c("GARCH","Realized"),
+       lty=1,col=c("red","blue"),lwd=2)
+
+```
+
+Realized volatility shows stronger and faster reaction to shocks as well as stronger and faster decline than predicted volatility. The Predicted Volatility captures most of the variance magnitude very well even during the shock period. The GARCH(2,1) model is adequate and can be used for prediction.
+
+### c). Build an ARMA-GARCH model with Student t innovations for the log-return series. Perform model checking and write down the fitted model.
+
+Obtain the same model with Student innovations.
+```{r}
+# Student-t innovations
+m2=garchFit(~1+garch(2,1),data=log.rtn,trace=F,cond.dist="std")
+summary(m2)
+```
+
+The resulting model is:
+$r_{t} = \mu + a_{t}$
+$a_{t}=\sigma_{t} \epsilon_{t}$
+$\sigma^{2}_{t} = \alpha_{0} + \alpha_{1}a^{2}_{t-1} + \alpha_{2}a^{2}_{t-2} + \beta_{1}\sigma^{2}_{t-1}$
+$\mu$ = 7.2454e-04 $\alpha_{0}$ = 1.5793e-06 $\alpha_{1}$ = 6.1117e-03 $\alpha_{2}$= 1.1435e-01 and $\beta_{1}$= 7.5068e+00  
+Note that alpha1 is still not significant but improved.
+
+Based on the Ljung-Box Test, at 5% level and lag=10, 15 and 20, we can not reject the H0: there is zero auto correlation for reresiduals and residual squares.
+
+The same model with the student innovaion produce smaller AIC and BIC. Since we confirmed kurtosis from the previous standarized residual analysis, the smaller AIC and BIC from the new model are expected.
+
+Plot and compare the volatilities estimated by the 2 models.
+```{r}
+v2<-m2@h.t
+plot(tdx,sqrt(v1),xlab='time',ylab='volatility',type='l')
+lines(tdx,sqrt(v2),xlab='time',ylab='volatility',type='l',col="red")
+legend("topright",legend=c("Gaussian","Student-t"), lty=1,col=c("black","red"),lwd=2)
+
+```
+
+```{r}
+cor(cbind(v1,v2))
+```
+
+Both model volatility prediction are practically the same.
+Cross-correlation matrix shows that they are almost perfectly correlated.
+
+
+Volatility estimated by GARCH(2,1) with student innocations vs historical realized volatility.
+
+```{r}
+realizedVolatility<-rollapply(log.rtn,width=10,partial=T,by=1, sd)
+matplot(1:length(log.rtn),cbind(m2@sigma.t,realizedVolatility),type="l",lty=1,lwd=2)
+legend("topleft",legend=c("GARCH.Student.Innovation","Realized"),
+       lty=1,col=c("black","red"),lwd=2)
+cor(cbind(sigma=m2@sigma.t,RV=realizedVolatility))
+```
+
+The Predicted Velotility of GARCH(2,1) Student Innovation correlates even better with the realized velotility.
+
+```{r}
+# Obtain plot of predictive intervals
+par(mfcol=c(1,1))
+uppGarch.SI=m2@fitted+2*sqrt(v2)
+lowGarch.SI=m2@fitted-2*sqrt(v2)
+uppReal1=m2@fitted+2*realizedVolatility
+lowReal1=m2@fitted-2*realizedVolatility
+tdx=c(1:length(resi))
+plot(tdx,log.rtn,xlab='time',ylab='series',type='l',ylim=c(-0.14,0.14))
+lines(tdx,uppGarch.SI,lty=2,col='red')
+lines(tdx,lowGarch.SI,lty=2,col='red')
+lines(tdx,uppReal1,lty=2,col='blue')
+lines(tdx,lowReal1,lty=2,col='blue')
+abline(h=m2@fitted[1])
+legend("topleft",legend=c("GARCH.Student.Innovation","Realized"),
+       lty=1,col=c("red","blue"),lwd=2)
+
+
+
+
+plot(tdx[1500:2000],log.rtn[1500:2000],
+     xlab='time',ylab='series',type='l',ylim=c(-0.14,0.14))
+lines(tdx[1500:2000],uppGarch.SI[1500:2000],lty=2,col='red')
+lines(tdx[1500:2000],lowGarch.SI[1500:2000],lty=2,col='red')
+lines(tdx[1500:2000],uppReal1[1500:2000],lty=2,col='blue')
+lines(tdx[1500:2000],lowReal1[1500:2000],lty=2,col='blue')
+abline(h=m2@fitted[1])
+legend("topleft",legend=c("GARCH.Student.Innovation","Realized"),
+       lty=1,col=c("red","blue"),lwd=2)
+```
+
+Like the original GARCH(2,1) model, Realized volatility shows stronger and faster reaction to shocks as well as stronger and faster decline than predicted volatility from the new model. The Predicted Volatility captures most of the variance magnitude very well even during the shock period. The GARCH(2,1) Student Innovations model is also great for predicting this data set.
+

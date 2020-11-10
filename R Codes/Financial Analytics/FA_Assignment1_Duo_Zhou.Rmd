@@ -1,0 +1,123 @@
+---
+title: "MSCA32001 Assignment1"
+author: "Duo Zhou"
+date: "6/23/2020"
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+  word_document: default
+---
+
+### 1. Read Chapter 1 of the book
+### 2. Download and analyze excess returns of S&P 500
+Calculate continuous daily excess returns of SP500("^GSPC") for the period from 1/1/2014 until 12/31/2014 using overnight Fed Funds rates as risk-free rates.
+
+The risk free rate is compounded to the ith day using both log and cumulative product methods. Both methods should produce very similar results. SNP500 returns are not compounded. The daily returns of both risk free rate and SNP500 simple returns are calculated using the return difference of two adjacent days. The daily excess return are the difference between SNP500 and risk free rate.   
+```{r}
+# read data
+datapath<-"C:/Users/zd000/Desktop/MSCA/Financial Analytics/Assignments/week1/"
+SNP500 <- read.csv(file = paste(datapath, 'SP500_NB2014.csv', sep='/'))
+# Exam data
+#head(SNP500)
+#Calculate the continuous daily excess return using log formula
+
+RIFSPFF.cont.return<-c()
+
+for(i in 1:length(SNP500$SP500Returns)){
+
+RIFSPFF.cont.return[i]<-log(prod(1+SNP500$RIFSPFF_N.B[1:i]/360)) # compounded log return of Risk Free 
+}
+SNP500.daily.cont.excess.return<- diff(SNP500$SP500Returns)-diff(RIFSPFF.cont.return)
+head(cbind(SNP500.Return.daily=diff(SNP500$SP500Returns),
+  Risk.Free.Log.Compouned.daily=diff(RIFSPFF.cont.return),
+  SNP500.daily.cont.excess.return=SNP500.daily.cont.excess.return))
+
+plot(SNP500.daily.cont.excess.return, type="l", ylab="Cont. Excess Daily Returns of SP500", xlab = "Date", xaxt="n",main="2014 S&P 500 Continuous Excess Daily Returns")
+axis(1, at=5*(1:50), labels=SNP500[5*(1:50),1])
+
+
+```
+
+```{r}
+#Calculate the continuous daily excess return using cumulative product method
+
+RIFSPFF.cont.return.1<-c()
+for(i in 1:length(SNP500$SP500Returns)){
+
+  RIFSPFF.cont.return.1[i]<-prod(1+SNP500$RIFSPFF_N.B[1:i]/360)-1 # RFrate Cont. Compounded Return
+
+}
+  
+SNP500.daily.cont.excess.return.1<- diff(SNP500$SP500Returns)-diff(RIFSPFF.cont.return.1)
+head(cbind(SNP500.Return.daily=diff(SNP500$SP500Returns),
+  Risk.Free.Log.Compouned.daily=diff(RIFSPFF.cont.return.1),
+  SNP500.daily.cont.excess.return=SNP500.daily.cont.excess.return.1))
+plot(SNP500.daily.cont.excess.return.1, type="l", ylab="Cont. Excess Daily Returns of SP500", xlab = "Date", xaxt="n",main="2014 S&P 500 Continuous Excess Daily Returns")
+axis(1, at=5*(1:50), labels=SNP500[5*(1:50),1])
+```
+
+```{r}
+head(SNP500.daily.cont.excess.return)
+head(SNP500.daily.cont.excess.return.1)
+```
+#### The SNP500 daily excess returns calculated using log and cumulative Formula are very similar as demonstrated above
+
+### 3. Download and analyze exchange rates
+
+Answer the same questions as in Exercise 5 on page 37 as a refresher of statistical analysis skills. Try to do it without using R demo code from the book
+
+1. Download GBP/USD and USD/JPY exchange rates from Oanda using quantmode
+
+```{r}
+#install.packages("quantmod") 
+suppressWarnings(library(quantmod))
+#Oanda only provides historical data for the past 180 days.
+getSymbols("GBP/USD",src="oanda", from= "2019-12-30", to= Sys.Date())
+getSymbols("USD/JPY",src="oanda", from= "2019-12-30", to= Sys.Date())
+
+```
+
+2. Calculate daily log returns of both exchange rates
+```{r}
+# Since Oanda only provides historical data for the past 180 days, I am going to use the data from the most recent 180 days.
+GBPUSD.daily.log.return <- diff(log(GBPUSD$GBP.USD))
+GBPUSD.daily.log.return <- GBPUSD.daily.log.return [-1,]
+USDJPY.daily.log.return <- diff(log(USDJPY$USD.JPY))
+USDJPY.daily.log.return <- USDJPY.daily.log.return [-1,]
+head(cbind(GBPUSD.daily.log.return=unname(GBPUSD.daily.log.return),
+USDJPY.daily.log.return=unname(USDJPY.daily.log.return)))
+
+```
+
+3. Calculate min, mean, sd, skewness, Kurtosis, and max of log returns for both exchange rates
+
+```{r}
+#install.packages("moments")
+library(moments)
+c(GBPUSD.min = min(GBPUSD.daily.log.return),
+  GBPUSD.mean = mean(GBPUSD.daily.log.return),
+  GBPUSD.sd = sd(GBPUSD.daily.log.return),
+  GBPUSD.skew =unname(skewness(GBPUSD.daily.log.return)),
+  GBPUSD.kurt = unname(kurtosis(GBPUSD.daily.log.return)),
+  GBPUSD.max = max(GBPUSD.daily.log.return))
+```
+
+```{r}
+c(USDJPY.min = min(USDJPY.daily.log.return),
+  USDJPY.mean = mean(USDJPY.daily.log.return),
+  USDJPY.sd = sd(USDJPY.daily.log.return),
+  USDJPY.skew = unname(skewness(USDJPY.daily.log.return)),
+  USDJPY.kurt = unname(kurtosis(USDJPY.daily.log.return)),
+  USDJPY.max = max(USDJPY.daily.log.return))
+```
+
+
+
+4. Test hypothesis H0: u=0 against alternative H0: u!=0
+
+```{r}
+suppressWarnings(t.test(GBPUSD.daily.log.return))
+suppressWarnings(t.test(USDJPY.daily.log.return))
+```
+ If we set our alpha to be 0.05, in both cases the p- values are not significant. So for both cases we cannot reject the null hypothesis that mean of the daily log returns is zero.

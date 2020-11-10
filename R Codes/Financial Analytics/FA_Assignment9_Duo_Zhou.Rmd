@@ -1,0 +1,164 @@
+---
+title: "FA_Assignment9_Duo_Zhou"
+author: "Duo Zhou"
+date: "8/18/2020"
+output:
+  html_document:
+    df_print: paged
+---
+## High Frequency Trading
+### Fit decomposition model to hft2_trades_train.csv
+
+```{r}
+datapath <- "C:/Users/zd000/Desktop/MSCA/Financial Analytics/Assignments/week9/"
+da=read.csv(paste(datapath,"hft2_trades_train.csv",sep="/"),header=T)
+head(da)
+```
+
+Calculate pch, the changes of the futures price in # of ticks. Calculate S, the absolute change of the futures price in # of ticks.
+```{r}
+tick <- 25  
+da$pch <- c(0, da$price[2:nrow(da)] - da$price[2:nrow(da) - 1] ) / tick
+da$S <- abs(da$pch)
+head(da[,c('pch','S')],10)
+```
+
+Create the components of decomposition A, D and S.
+
+```{r}
+nl<-nrow(da)
+idx=c(1:nl)[da$pch > 0]
+jdx=c(1:nl)[da$pch < 0]
+A=rep(0,nl); A[idx]=1; A[jdx]=1
+D=rep(0,nl); D[idx]=1; D[jdx]=-1
+S=da$S
+head(cbind(A,D,S))
+```
+
+Create lagged variables
+
+```{r}
+Ai=A[2:nl]; Aim1=A[1:nl-1]
+Di=D[2:nl]; Dim1=D[1:nl-1]
+Si=S[2:nl]; Sim1=S[1:nl-1]
+```
+
+Fit logistic regression models to the components.
+A model
+```{r}
+m1=glm(Ai~Aim1,family="binomial")
+summary(m1)
+```
+
+D model
+```{r}
+di=Di[Ai==1]
+dim1=Dim1[Ai==1]
+di=(di+abs(di))/2 # transform di to binary
+
+m2=glm(di~dim1,family="binomial")
+summary(m2)
+```
+
+S uptick model
+
+```{r}
+si=Si[Di==1]
+sim1=Sim1[Di==1]
+source(paste(datapath,"GeoSize.R",sep="/")) # R script to fit Geometric dist.
+m3=GeoSize(si,sim1)
+```
+
+S downtick model
+
+```{r}
+nsi=Si[Di==-1]
+nsim1=Sim1[Di==-1]
+m4=GeoSize(nsi,nsim1)
+```
+
+From model for Ai
+
+```{r}
+(beta_0 <- unname(m1$coefficients[1]))
+(beta_1 <- unname(m1$coefficients[2]))
+plogis(beta_0)             # prob of Ai = 1 when Aim1 = 0
+plogis(beta_0 + 1*beta_1)  # prob of Ai = 1 when Aim1 = 1
+```
+
+From model for Di
+
+```{r}
+(gamma_0 <- unname(m2$coefficients[1]))
+(gamma_1 <- unname(m2$coefficients[2]))
+plogis(gamma_0 - 1*gamma_1)  # prob of Di = 1 when Ai = 1, Dim1 = -1
+plogis(gamma_0)              # prob of Di = 1 when Ai = 1, Dim1 =  0
+plogis(gamma_0 + 1*gamma_1)  # prob of Di = 1 when Ai = 1, Dim1 = +1
+```
+
+Parameters of the S uptick model are:
+
+```{r}
+(theta_u0 <- unname(m3$par[1]))
+(theta_u1 <- unname(m3$par[2]))
+```
+
+Parameters of the S downtick model are:
+
+```{r}
+(theta_d0 <- unname(m4$par[1]))
+(theta_d1 <- unname(m4$par[2]))
+```
+
+
+Finally, probability:
+$P(pch<=x) = P(A_{i}D{i}S{i})=P(S{i}|A{i}D{i})P(D{i}|A{i})P(A{i})$
+This probability is calculated by the following function.
+
+```{r}
+# Pr( next_pch <= x | aim1, dim1, sim1 )
+pch_decomposition_cdf <- function(x, aim1, dim1, sim1, decomp_params) {  
+    pch_cdf <- 0
+    p <- plogis(decomp_params$beta_0 + decomp_params$beta_1 * aim1)    # Pr( Ai =  1 | aim1 )
+    q <- plogis(decomp_params$gamma_0 + decomp_params$gamma_1 * dim1)  # Pr( Di = +1 | dim1 )
+    
+    lambda_up = plogis(decomp_params$theta_u0 + decomp_params$theta_u1 * sim1)
+    lambda_down = plogis(decomp_params$theta_d0 + decomp_params$theta_d1 * sim1)
+    
+    if (x < 0) {
+        # P( next_pch <= x ) = Pr( Ai = 1, Di = -1, Si >= -x ) = Pr( Ai = 1, Di = -1, Si > -x-1 ) 
+        # since Si ~ 1 + geom(lambda_down) when Di = -1 we have:
+        pch_cdf <- p * (1-q) * pgeom(-x-2, prob=lambda_down, lower.tail = FALSE) 
+    } else if (x >= 0) {
+        # P( next_pch <= x ) = Pr( Ai = 0 ) + Pr( Ai = 1, Di = 1 ) + Pr( Ai = 1, Di = -1, Si <= x ) = 
+        # = (1-p) + p*(1-q) + Pr( Ai = 1, Di = 1, Si <= x ) 
+        # since Si ~ 1 + geom(lambda_up) when Di = 1 we have:
+        pch_cdf <- (1-p) + p * (1-q) + p * q * pgeom(x-1, prob=lambda_up)
+    }
+    
+    return(pch_cdf)
+}
+```
+
+```{r}
+decomp_params <- list(beta_0 = beta_0, beta_1 = beta_1,
+                      gamma_0 = gamma_0, gamma_1 = gamma_1,
+                      theta_u0 = theta_u0, theta_u1 = theta_u1,
+                      theta_d0 = theta_d0, theta_d1 = theta_d1)
+```
+
+
+What is probability that price change of the next trade will be category -1 tick if current price change is not zero (A=1), negative (D=-1), and S changed by 2 ticks?
+
+```{r}
+(decomp_cross_prob <- pch_decomposition_cdf(-1, aim1=1, dim1=-1, sim1=2, decomp_params))
+```
+
+
+
+
+
+
+
+
+

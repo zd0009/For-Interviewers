@@ -1,0 +1,116 @@
+---
+title: "FA_Assignment6_Duo_Zhou"
+author: "Duo Zhou"
+date: "8/3/2020"
+output: pdf_document
+---
+A stock index is currently at 810 and has volatility of 20%.
+The risk-free rate is 5% per year.
+Assume that dividend yield equals 1%.
+
+```{r}
+library(RQuantLib)
+```
+
+### 1. Price European 6-month call option with strike 800 using EuropeanOption() from RQuantLib.
+
+```{r}
+#Assign Inputs
+Underlying <- 810
+Volatility <- .20
+RFRate <- .05
+DivYield <- .01
+Strike <- 800
+Maturity <- .5
+# Use EuropeanOption to calculate Call value and greeks
+call <- EuropeanOption(type="call", underlying = Underlying, strike=Strike,
+                         dividendYield=DivYield, riskFreeRate=RFRate, maturity=Maturity,
+                         volatility=Volatility)
+call$value 
+```
+
+### 2. Calculate the same premium manually using the formulas on the last slide of the lecture notes.
+
+$C=S_{0}N(d_{1})-(Kexp(-RT))N(d_{2})$
+
+$d_{1}=(ln(S_{0}/K) + (R + .5\sigma^2)  T)/(\sigma \sqrt(T))$
+
+$d2=d_{1} - (\sigma \sqrt(T))$
+
+```{r}
+
+d1=(log(Underlying/Strike) + (RFRate + .5*(Volatility^2))*Maturity)/(Volatility*sqrt(Maturity))
+
+d2 = d1 - (Volatility*sqrt(Maturity))
+
+C = (Underlying * pnorm(d1,0,1)) - ((Strike*exp(-RFRate * Maturity))* pnorm(d2,0,1))
+
+C
+```
+
+Think how dividend yield should affect option price.
+Experiment with the function EuropeanOption() with zero or non-zero dividend yield and find how the Black-Scholes formula on slide 17 should be modified for dividend yield.
+
+```{r}
+# Use EuropeanOption to calculate Call value  using dvidendYield =0
+call.div0 <- EuropeanOption(type="call", underlying = Underlying, strike=Strike,
+                         dividendYield=0, riskFreeRate=RFRate, maturity=Maturity,
+                         volatility=Volatility)
+call.div0$value
+```
+
+We can see that the Black Scholes Merton formula in the last slide of the lecture did not take divident yields into consideration. As devident yields increase, the call option price will decrease.
+
+The following is the Merton extension on the original formula.
+
+
+$C=S_{0} exp(-qT)N(d_{1})-(Kexp(-RT))N(d_{2})$
+
+$d_{1}=(ln(S_{0}/K) + (R - q+ .5\sigma^2)  T)/(\sigma \sqrt(T))$
+
+$d2=d_{1} - (\sigma \sqrt(T))$
+
+Where q is the divident yield
+
+Let us apply the new formula with divident yield = 0.01
+
+```{r}
+
+
+d1n=(log(Underlying/Strike) + (RFRate - DivYield +
+.5*(Volatility^2))*Maturity)/(Volatility*sqrt(Maturity))
+
+d2n = d1n - (Volatility*sqrt(Maturity))
+
+Cn = (Underlying *exp(-DivYield*Maturity)*pnorm(d1n,0,1)) -
+  ((Strike*exp(-RFRate * Maturity))* pnorm(d2n,0,1))
+
+Cn
+```
+
+We can see the new formula generates call option price that is identical to our answer in part 1. 
+
+### 3. Calculate the premium of put option with the same expiry and same strike using put-call parity
+
+Put-Call parity without divident yield:
+$Put = Call + K exp(-RT) - S_{0}$
+
+Put-Call parity with divident yield:
+$Put = Call + K exp(-RT) - S_{0}  exp(-qT)$
+
+```{r}
+# put price with divident Yield = 0.01
+put.parity <- Cn + (Strike * exp(-RFRate*Maturity)) - (Underlying*exp(-DivYield*Maturity))
+put.parity
+```
+
+Verify the Pu-Call parity formula using EuropeanOption()
+```{r}
+
+put <- EuropeanOption(type="put", underlying = Underlying, strike=Strike,
+                         dividendYield=DivYield, riskFreeRate=RFRate, 
+                       maturity=Maturity, volatility=Volatility)
+
+put$value 
+```
+
