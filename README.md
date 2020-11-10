@@ -1,4 +1,4 @@
 # For-Interviewers
-## Course Work and Project Codes
+## Course Works and Projects
 ### Author: Duo Zhou
 
